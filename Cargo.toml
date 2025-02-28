@@ -1,0 +1,11 @@
+[package]
+name = "ldap-aux-parse"
+version = "0.1.0"
+edition = "2021"
+license = "CC0-1.0"
+description = "Parser for auxiliary LDAP formats: distinguished names (DNs) and search filters."
+repository = "https://github.com/RavuAlHemio/ldap-aux-parse"
+readme = "README.md"
+keywords = ["ldap", "parser", "dn"]
+
+[dependencies]
