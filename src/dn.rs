@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::str::FromStr;
 
-use crate::find_next_index;
+use crate::{find_next_index, ByteStringPart, FromByteStringParts};
 
 
 /// The unique identifier of a specific object in the directory.
@@ -220,29 +220,136 @@ impl FromStr for OidAttributeType {
 pub struct AttributeValue {
     bytes: Vec<u8>,
 }
+impl<'a> FromByteStringParts<'a> for AttributeValue {
+    type Error = ParseError;
+
+    fn from_byte_string_parts(parts: &[ByteStringPart<'a>]) -> Result<Self, Self::Error> {
+        if parts.len() == 0 {
+            return Ok(Self { bytes: Vec::with_capacity(0) });
+        }
+        if parts.len() == 1 && parts[0].as_unescaped().map(|p| p.starts_with(b"#")).unwrap_or(false) {
+            // hex string (may not contain escapes)
+            let unescaped = parts[0].as_unescaped().unwrap();
+            let total_bytes = unescaped.len();
+            if total_bytes % 2 != 1 {
+                // number of hex digits must be even => number of characters including # must be odd
+                return Err(ParseError::OddLengthHexString);
+            }
+
+            let mut bytes = Vec::with_capacity((total_bytes - 1) / 2);
+            for (hex_byte_index, hex_byte) in unescaped[1..].chunks(2).enumerate() {
+                assert_eq!(hex_byte.len(), 2);
+                let mut actual_byte = 0;
+                for (nibble_index, &nibble) in hex_byte.iter().enumerate() {
+                    actual_byte *= 0x10;
+                    actual_byte += match nibble {
+                        b'0'..=b'9' => nibble - b'0',
+                        b'A'..=b'F' => nibble - b'A' + 10,
+                        b'a'..=b'f' => nibble - b'a' + 10,
+                        _ => return Err(ParseError::InvalidCharInHexString {
+                            byte: nibble,
+                            byte_pos: 1 + 2*hex_byte_index + nibble_index,
+                        }),
+                    };
+                }
+                bytes.push(actual_byte);
+            }
+
+            Ok(Self {
+                bytes,
+            })
+        } else {
+            // textual
+            let expected_length = parts
+                .iter()
+                .map(|part| part.len())
+                .sum();
+            let mut bytes = Vec::with_capacity(expected_length);
+            let mut first_char = true;
+            for part in parts {
+                match part {
+                    ByteStringPart::EscapedByte { byte, .. } => {
+                        // just add it verbatim
+                        bytes.push(*byte);
+                    },
+                    ByteStringPart::UnescapedSlice { slice, index } => {
+                        let mut bytes = slice.iter().peekable();
+                        let mut is_first = true;
+
+                        while let Some(&b) = bytes.next() {
+                            // check general validity
+                            // forbidden bytes are: 0x00, 0x22 ("), 0x2B (+), 0x2C (,), 0x3B (;),
+                            // 0x3C (<), 0x3E (>), 0x5C (\)
+                            // and invalid UTF-8 sequences
+
+                            if b == 0x00 || b == b'"' || b == b'+' || b == b',' || b == b';'
+                                    || b == b'<' || b == b'>' || b == b'\\' {
+                                todo!();
+                            }
+
+                            if is_first {
+                                is_first = false;
+
+                                // check validity of first byte
+                                todo!();
+                            } else if bytes.peek().is_none() {
+                                // check validity of last byte
+                            }
+                        }
+                    },
+                }
+            }
+            while let Some((i, c)) = characters.next() {
+                // check for general validity
+                let is_valid =
+                    (c >= '\u{01}' && c <= '\u{21}')
+                    || (c >= '\u{23}' && c <= '\u{2A}')
+                    || (c >= '\u{2D}' && c <= '\u{3A}')
+                    || c == '\u{3D}'
+                    || (c >= '\u{3F}' && c <= '\u{5B}')
+                    || (c >= '\u{5D}' && c <= '\u{7F}')
+                    || c >= '\u{80}';
+                if !is_valid {
+                    return Err(ParseError::InvalidChar { character: c, byte_pos: i });
+                }
+
+                if first_char {
+                    first_char = false;
+
+                    // also check for first-character validity
+                    let is_valid_first =
+                        c != '\u{20}'
+                        || c != '\u{23}';
+                    if !is_valid_first {
+                        return Err(ParseError::InvalidInitialChar { character: c });
+                    }
+                } else if characters.peek().is_none() {
+                    // check for last-character validity
+                    let is_valid_last =
+                        c != '\u{20}';
+                    if !is_valid_last {
+                        return Err(ParseError::InvalidFinalChar { character: c });
+                    }
+                }
+
+                let mut bf = [0u8; 4];
+                bytes.extend_from_slice(c.encode_utf8(&mut bf).as_bytes());
+            }
+
+            Ok(Self {
+                bytes,
+            })
+        }
+    }
+}
 impl FromStr for AttributeValue {
     type Err = ParseError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // attributeValue = string / hexstring
-        // hexstring = "#" 1*hexpair
-        // hexpair = HEX HEX
-        // HEX = "0"-"9" / "A"-"F" / "a"-"f"
-        // string = [ ( leadchar / pair ) [ *( stringchar / pair ) ( trailchar / pair ) ] ]
-        // leadchar = LUTF1 / UTFMB
-        // LUTF1 = %x01-1F / %x21 / %x24-2A / %x2D-3A / %x3D / %x3F-5B / %x5D-7F ; notably no "#"
-        // UTFMB = UTF2 / UTF3 / UTF4 ; any Unicode character >= U+0080 as UTF-8
-        // trailchar = TUTF1 / UTFMB
-        // TUTF1 = %x01-1F / %x21 / %x23-2A / %x2D-3A / %x3D / %x3F-5B / %x5D-7F
-        // stringchar = SUTF1 / UTFMB
-        // SUTF1 = %x01-21 / %x23-2A / %x2D-3A / %x3D / %x3F-5B / %x5D-7F
-        // pair = "\" ( "\" / special / hexpair )
-        // special = escaped / " " / "#" / "="
-        // escaped = '"' / "+" / "," / ";" / "<" / ">"
-
         if s.len() == 0 {
             return Ok(Self { bytes: Vec::with_capacity(0) });
         }
-        if s.starts_with('#') {
+
+        if s.starts_with("#") {
             // hex string
             let total_bytes = s.as_bytes().len();
             if total_bytes % 2 != 1 {
@@ -274,6 +381,13 @@ impl FromStr for AttributeValue {
             })
         } else {
             // textual
+
+            // process escapes first
+            let s_with_escapes = process_dn_escapes(s)?;
+            if s_with_escapes.len() == 0 {
+                return Ok(Self { bytes: Vec::with_capacity(0) });
+            }
+
             let mut characters = s.char_indices().peekable();
             let mut bytes = Vec::with_capacity(s.len());
             let mut first_char = true;
@@ -441,4 +555,80 @@ impl fmt::Display for ParseError {
     }
 }
 impl std::error::Error for ParseError {
+}
+
+
+fn process_dn_escapes(dn: &str) -> Result<Vec<ByteStringPart>, ParseError> {
+    const BACKSLASH_LEN: usize = '\\'.len_utf8();
+
+    let mut next_index = Some(0);
+    let mut parts = Vec::new();
+    while let Some(mut index) = next_index {
+        if let Some(backslash_index) = find_next_index(dn, '\\', index) {
+            let unescaped_preceding = dn[index..backslash_index].as_bytes();
+            if unescaped_preceding.len() > 0 {
+                parts.push(ByteStringPart::UnescapedSlice(unescaped_preceding));
+            }
+
+            // process the escape
+            index += '\\'.len_utf8();
+            let c1 = match dn[index..].chars().nth(0) {
+                Some(c) => c,
+                None => return Err(ParseError::IncompleteFinalEscape),
+            };
+            match c1 {
+                ' '|'#'|'='|'"'|'+'|','|';'|'<'|'>'|'\\' => {
+                    // self-escape
+                    parts.push(ByteStringPart::EscapedByte((c1 as u32) as u8));
+                    next_index = Some(index + c1.len_utf8());
+                },
+                '0'..='9'|'A'..='F'|'a'..='f' => {
+                    // hex escape (hopefully)
+                    index += c1.len_utf8();
+
+                    let top_nibble = match c1 {
+                        '0'..='9' => ((c1 as u32) - ('0' as u32)) as u8,
+                        'A'..='F' => ((c1 as u32) + 10 - ('A' as u32)) as u8,
+                        'a'..='f' => ((c1 as u32) + 10 - ('a' as u32)) as u8,
+                        _ => unreachable!(),
+                    };
+                    assert_eq!(top_nibble & 0xF0, 0);
+
+                    let c2 = match dn[index..].chars().nth(0) {
+                        Some(c) => c,
+                        None => return Err(ParseError::IncompleteFinalEscape),
+                    };
+                    match c2 {
+                        '0'..='9'|'A'..='F'|'a'..='f' => {
+                            index += c2.len_utf8();
+
+                            // yup, hex escape
+                            let bottom_nibble = match c2 {
+                                '0'..='9' => ((c2 as u32) - ('0' as u32)) as u8,
+                                'A'..='F' => ((c2 as u32) + 10 - ('A' as u32)) as u8,
+                                'a'..='f' => ((c2 as u32) + 10 - ('a' as u32)) as u8,
+                                _ => unreachable!(),
+                            };
+                            assert_eq!(bottom_nibble & 0xF0, 0);
+
+                            let byte = top_nibble * 0x10 + bottom_nibble;
+                            parts.push(ByteStringPart::EscapedByte(byte));
+                            next_index = Some(index);
+                        },
+                        _ => return Err(ParseError::InvalidEscapedChar { character: c2 }),
+                    }
+                },
+                _ => return Err(ParseError::InvalidEscapedChar { character: c1 }),
+            }
+        } else {
+            // no more backslash
+            let unescaped_final = dn[index..].as_bytes();
+            if unescaped_final.len() > 0 {
+                parts.push(ByteStringPart::UnescapedSlice(unescaped_final));
+            }
+
+            next_index = None;
+        };
+    }
+    Ok(parts)
 }
