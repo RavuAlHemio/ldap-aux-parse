@@ -5,7 +5,10 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::str::FromStr;
 
-use crate::{ByteStringPart, find_next_index, FromByteStringParts, split_byte_string_parts_at};
+use crate::{
+    ByteStringPart, byte_string_to_slices, find_next_index, FromByteStringParts,
+    split_byte_string_parts_at, StringSlice,
+};
 
 
 /// The unique identifier of a specific object in the directory.
@@ -65,6 +68,20 @@ impl FromStr for DistinguishedName {
         Self::from_byte_string_parts(&parts)
     }
 }
+impl fmt::Display for DistinguishedName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut first_rdn = true;
+        for rdn in &self.0 {
+            if first_rdn {
+                first_rdn = false;
+            } else {
+                write!(f, ",")?;
+            }
+            write!(f, "{}", rdn)?;
+        }
+        Ok(())
+    }
+}
 
 /// A single component of a distinguished name.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -101,6 +118,20 @@ impl FromStr for RelativeDistinguishedName {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let parts = process_dn_escapes(s)?;
         Self::from_byte_string_parts(&parts)
+    }
+}
+impl fmt::Display for RelativeDistinguishedName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut first_kvp = true;
+        for (key, value) in &self.key_value_pairs {
+            if first_kvp {
+                first_kvp = false;
+            } else {
+                write!(f, "+")?;
+            }
+            write!(f, "{}={}", key, value)?;
+        }
+        Ok(())
     }
 }
 
@@ -146,6 +177,14 @@ impl FromStr for AttributeType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let parts = process_dn_escapes(s)?;
         Self::from_byte_string_parts(&parts)
+    }
+}
+impl fmt::Display for AttributeType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Short(sat) => sat.fmt(f),
+            Self::Oid(oat) => oat.fmt(f),
+        }
     }
 }
 
@@ -220,6 +259,12 @@ impl<'a> FromByteStringParts<'a> for ShortAttributeType {
         Ok(Self {
             name: name.to_owned(),
         })
+    }
+}
+impl fmt::Display for ShortAttributeType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // nothing to escape; format does not allow any characters that would need escaping
+        self.name.fmt(f)
     }
 }
 
@@ -327,6 +372,21 @@ impl FromStr for OidAttributeType {
     type Err = ParseError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::new(s)
+    }
+}
+impl fmt::Display for OidAttributeType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // nothing to escape; format does not allow any characters that would need escaping
+        let mut first_arc = true;
+        for arc in &self.arcs {
+            if first_arc {
+                first_arc = false;
+            } else {
+                write!(f, ".")?;
+            }
+            write!(f, "{}", arc)?;
+        }
+        Ok(())
     }
 }
 
@@ -591,6 +651,66 @@ impl FromStr for AttributeValue {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let escaped = process_dn_escapes(s)?;
         AttributeValue::from_byte_string_parts(&escaped)
+    }
+}
+impl fmt::Display for AttributeValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use std::fmt::Write;
+
+        // try the text-with-escapes representation first
+        let slices = byte_string_to_slices(&self.bytes);
+        let mut text_with_escapes = String::new();
+        for (slice_index, slice) in slices.iter().enumerate() {
+            match slice {
+                StringSlice::Byte { byte, .. } => {
+                    write!(&mut text_with_escapes, "\\{:02X}", byte)?;
+                },
+                StringSlice::Textual { index, string } => {
+                    assert!(string.len() > 0);
+
+                    let mut actual_string = *string;
+                    if *index == 0 {
+                        // first part of string
+                        if actual_string.starts_with("#") || actual_string.starts_with(" ") {
+                            // DNs may not start with these characters; escape them
+                            write!(text_with_escapes, "\\{}", &actual_string[0..1])?;
+                            actual_string = &actual_string[1..];
+                        }
+                    }
+
+                    let mut append_me = "";
+                    if slice_index == slices.len() - 1 {
+                        // last part of string
+                        if string.ends_with(" ") {
+                            // DNs may not end with these characters; prepare to escape them
+                            append_me = "\\ ";
+                            actual_string = &actual_string[..actual_string.len()-1];
+                        }
+                    }
+
+                    for c in actual_string.chars() {
+                        match c {
+                            '\u{00}' => write!(text_with_escapes, "\\00")?,
+                            '"'|'+'|','|';'|'<'|'>'|'\\' => write!(text_with_escapes, "\\{}", c)?,
+                            other => write!(text_with_escapes, "{}", other)?,
+                        }
+                    }
+
+                    text_with_escapes.push_str(append_me);
+                },
+            }
+        }
+        let hex_length = 1 + 2*self.bytes.len();
+        if text_with_escapes.len() > hex_length {
+            // prefer hex representation
+            write!(f, "#")?;
+            for &b in &self.bytes {
+                write!(f, "{:02X}", b)?;
+            }
+        } else {
+            write!(f, "{}", text_with_escapes)?;
+        }
+        Ok(())
     }
 }
 
@@ -897,5 +1017,35 @@ mod tests {
         assert_eq!(value.as_rdns()[0].as_set().iter().nth(1).unwrap().1.as_bytes(), b"Bienne");
         assert_eq!(value.as_rdns()[1].as_set().first().unwrap().0.as_short().unwrap(), "c");
         assert_eq!(value.as_rdns()[1].as_set().first().unwrap().1.as_bytes(), b"CH");
+
+        let value = DistinguishedName::from_str("o=Dewey\\, Cheatham & Howe,l=#4C6F6E646F6E,c=GB").unwrap();
+        assert_eq!(value.as_rdns().len(), 3);
+        assert_eq!(value.as_rdns()[0].as_set().len(), 1);
+        assert_eq!(value.as_rdns()[0].as_set().first().unwrap().0.as_short().unwrap(), "o");
+        assert_eq!(value.as_rdns()[0].as_set().first().unwrap().1.as_bytes(), b"Dewey, Cheatham & Howe");
+        assert_eq!(value.as_rdns()[1].as_set().len(), 1);
+        assert_eq!(value.as_rdns()[1].as_set().first().unwrap().0.as_short().unwrap(), "l");
+        assert_eq!(value.as_rdns()[1].as_set().first().unwrap().1.as_bytes(), b"London");
+        assert_eq!(value.as_rdns()[2].as_set().len(), 1);
+        assert_eq!(value.as_rdns()[2].as_set().first().unwrap().0.as_short().unwrap(), "c");
+        assert_eq!(value.as_rdns()[2].as_set().first().unwrap().1.as_bytes(), b"GB");
+    }
+
+    #[test]
+    fn test_display_dn() {
+        let value = DistinguishedName::from_str("dc=example,dc=com").unwrap();
+        assert_eq!(&value.to_string(), "dc=example,dc=com");
+
+        let value = DistinguishedName::from_str("o=Dewey\\, Cheatham & Howe,l=London,c=GB").unwrap();
+        assert_eq!(&value.to_string(), "o=Dewey\\, Cheatham & Howe,l=London,c=GB");
+
+        let value = DistinguishedName::from_str("2.5.4.10=Dewey\\, Cheatham & Howe,l=London,c=GB").unwrap();
+        assert_eq!(&value.to_string(), "2.5.4.10=Dewey\\, Cheatham & Howe,l=London,c=GB");
+
+        let value = DistinguishedName::from_str("l=Biel+l=Bienne,c=CH").unwrap();
+        assert_eq!(&value.to_string(), "l=Biel+l=Bienne,c=CH");
+
+        let value = DistinguishedName::from_str("o=Dewey\\, Cheatham & Howe,l=#4C6F6E646F6E,c=GB").unwrap();
+        assert_eq!(&value.to_string(), "o=Dewey\\, Cheatham & Howe,l=London,c=GB");
     }
 }
