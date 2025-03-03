@@ -9,3 +9,4 @@ readme = "README.md"
 keywords = ["ldap", "parser", "dn"]
 
 [dependencies]
+nom = { version = "8.0" }
