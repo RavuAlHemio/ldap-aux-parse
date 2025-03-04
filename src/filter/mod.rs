@@ -7,6 +7,7 @@ pub(crate) mod parsing;
 
 
 use std::collections::BTreeSet;
+use std::fmt;
 
 use crate::{AttributeType, AttributeValue};
 use crate::filter::parsing::{parse_attribute_description, parse_filter};
@@ -33,6 +34,15 @@ impl AttributeDescription {
             return None;
         }
         Some(attr)
+    }
+}
+impl fmt::Display for AttributeDescription {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.attribute_type)?;
+        for option in &self.options {
+            write!(f, ";{}", option.as_str())?;
+        }
+        Ok(())
     }
 }
 
@@ -222,6 +232,73 @@ impl Filter {
             Self::Extensible { dn_attributes, .. } => Some(*dn_attributes),
             _ => None,
         }
+    }
+}
+impl fmt::Display for Filter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_extensible_filter() && self.key().is_none() && self.extensible_matching_rule().is_none() {
+            // invalid combination
+            return Err(fmt::Error);
+        }
+
+        write!(f, "(")?;
+        match self {
+            Filter::And(criteria) => {
+                write!(f, "&")?;
+                for criterion in criteria {
+                    write!(f, "{}", criterion)?;
+                }
+            },
+            Filter::Or(criteria) => {
+                write!(f, "|")?;
+                for criterion in criteria {
+                    write!(f, "{}", criterion)?;
+                }
+            },
+            Filter::Not(criterion) => {
+                write!(f, "!{}", criterion)?;
+            },
+            Filter::Equality { key, value } => {
+                write!(f, "{}={}", key, value)?;
+            },
+            Filter::Substring { key, start, middle, end } => {
+                write!(f, "{}=", key)?;
+                if let Some(s) = start {
+                    write!(f, "{}", s)?;
+                }
+                for piece in middle {
+                    write!(f, "*{}", piece)?;
+                }
+                if let Some(e) = end {
+                    write!(f, "{}", e)?;
+                }
+            },
+            Filter::GreaterOrEqual { key, value } => {
+                write!(f, "{}>={}", key, value)?;
+            },
+            Filter::LessOrEqual { key, value } => {
+                write!(f, "{}<={}", key, value)?;
+            },
+            Filter::Present { key } => {
+                write!(f, "{}=*", key)?;
+            },
+            Filter::Approximate { key, value } => {
+                write!(f, "{}~={}", key, value)?;
+            },
+            Filter::Extensible { matching_rule, key, value, dn_attributes } => {
+                if let Some(k) = key {
+                    write!(f, "{}", k)?;
+                }
+                if *dn_attributes {
+                    write!(f, ":dn")?;
+                }
+                if let Some(mr) = matching_rule {
+                    write!(f, ":{}", mr)?;
+                }
+                write!(f, ":={}", value)?;
+            },
+        }
+        write!(f, ")")
     }
 }
 
