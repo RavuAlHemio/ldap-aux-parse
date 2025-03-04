@@ -125,7 +125,7 @@ impl ShortAttributeType {
     }
 
     /// Attempts to parse this short attribute type from a string.
-    pub fn try_from_dn_str(s: &str) -> Option<Self> {
+    pub fn try_from_str(s: &str) -> Option<Self> {
         let (rest, key) = crate::common_parsing::parse_attribute_key_short(s).ok()?;
         if rest.len() > 0 {
             return None;
@@ -153,7 +153,7 @@ impl OidAttributeType {
     }
 
     /// Attempts to parse this OID attribute type from a string.
-    pub fn try_from_dn_str(s: &str) -> Option<Self> {
+    pub fn try_from_str(s: &str) -> Option<Self> {
         let (rest, key) = crate::common_parsing::parse_attribute_key_oid(s).ok()?;
         if rest.len() > 0 {
             return None;
