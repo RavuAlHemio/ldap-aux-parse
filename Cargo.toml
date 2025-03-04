@@ -8,5 +8,10 @@ repository = "https://github.com/RavuAlHemio/ldap-aux-parse"
 readme = "README.md"
 keywords = ["ldap", "parser", "dn"]
 
+[features]
+default = []
+tracing = ["dep:tracing"]
+
 [dependencies]
 nom = { version = "8.0" }
+tracing = { version = "0.1", optional = true }
