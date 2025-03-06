@@ -11,6 +11,7 @@ keywords = ["ldap", "parser", "dn"]
 [features]
 default = []
 serde = ["dep:serde"]
+stringprep = []
 tracing = ["dep:tracing"]
 
 [dependencies]
