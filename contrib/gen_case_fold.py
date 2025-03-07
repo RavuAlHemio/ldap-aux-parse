@@ -193,13 +193,13 @@ def collect_pair_mappings(mappings: list[CharMapping], raw_mappings: dict[str, s
 
             prev_source, prev_target = next_source, next_target
 
-    # final block
-    if prev_source + 2 != next_source:
-        # block of pair mappings ended
-        if prev_source - start_source > 1:
-            mappings.append(PairMapping(start_source, prev_source, remainder_by_2, 1))
-            for code in range(start_source, prev_source+1, 2):
-                del raw_mappings[chr(code)]
+        # final block
+        if prev_source + 2 != next_source:
+            # block of pair mappings ended
+            if prev_source - start_source > 1:
+                mappings.append(PairMapping(start_source, prev_source, remainder_by_2, 1))
+                for code in range(start_source, prev_source+1, 2):
+                    del raw_mappings[chr(code)]
 
 
 def collect_singleton_mappings(mappings: list[CharMapping], raw_mappings: dict[str, str]) -> None:
