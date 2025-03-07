@@ -38,8 +38,8 @@ class BlockMapping(CharMapping):
         sign, abs_offset = ("+", self.code_offset) if self.code_offset >= 0 else ("-", -self.code_offset)
         return "".join((
             f"if {range_str} {ob}\n",
-            f"            write!(output, \"{ob}{cb}\", char::from_u32((c as u32) {sign} {abs_offset}).unwrap()).unwrap();\n"
-            f"        {cb}"
+            f"        write!(output, \"{ob}{cb}\", char::from_u32((c as u32) {sign} {abs_offset}).unwrap()).unwrap();\n"
+            f"    {cb}"
         ))
 
     def __repr__(self) -> str:
@@ -63,8 +63,8 @@ class PairMapping(CharMapping):
         sign, abs_offset = ("+", self.code_offset) if self.code_offset >= 0 else ("-", -self.code_offset)
         return "".join((
             f"if {range_str} {ob}\n",
-            f"            write!(output, \"{ob}{cb}\", char::from_u32((c as u32) {sign} {abs_offset}).unwrap()).unwrap();\n"
-            f"        {cb}"
+            f"        write!(output, \"{ob}{cb}\", char::from_u32((c as u32) {sign} {abs_offset}).unwrap()).unwrap();\n"
+            f"    {cb}"
         ))
 
     def __repr__(self) -> str:
@@ -87,16 +87,16 @@ class SingletonMapping(CharMapping):
         if len(self.to_points) == 1:
             # short output style
             to_point = self.to_points[0]
-            pieces.append(f"            write!(output, \"{brace_sequence}\", char::from_u32(0x{to_point:02X}).unwrap()).unwrap();\n")
+            pieces.append(f"        write!(output, \"{brace_sequence}\", char::from_u32(0x{to_point:02X}).unwrap()).unwrap();\n")
         else:
             # long output style
-            pieces.append(f"            write!(\n")
-            pieces.append(f"                output,\n")
-            pieces.append(f"                \"{brace_sequence}\",\n")
+            pieces.append(f"        write!(\n")
+            pieces.append(f"            output,\n")
+            pieces.append(f"            \"{brace_sequence}\",\n")
             for to_point in self.to_points:
-                pieces.append(f"                char::from_u32(0x{to_point:02X}).unwrap(),\n")
-            pieces.append("            ).unwrap();\n")
-        pieces.append(f"        {cb}")
+                pieces.append(f"            char::from_u32(0x{to_point:02X}).unwrap(),\n")
+            pieces.append("        ).unwrap();\n")
+        pieces.append(f"    {cb}")
         return "".join(pieces)
 
     def __repr__(self) -> str:
@@ -228,9 +228,7 @@ def write_replacements_rust(output_file: io.TextIOBase, mappings: Iterable[CharM
     wrln(output_file, "")
     wrln(output_file, "")
     wrln(output_file, "/// Maps the characters in the source string according to RFC3454 § B.2.")
-    wrln(output_file, "pub(crate) fn map_rfc3454_b2(source_string: &str) -> String {")
-    wrln(output_file, "    let mut output = String::with_capacity(source_string.len());")
-    wrln(output_file, "    for c in source_string.chars() {")
+    wrln(output_file, "pub(crate) fn map_rfc3454_b2(c: char, output: &mut String) {")
 
     first_mapping = True
     for mapping in mappings:
@@ -243,10 +241,8 @@ def write_replacements_rust(output_file: io.TextIOBase, mappings: Iterable[CharM
         wr(output_file, mapping.to_rust())
 
     wrln(output_file, " else {")
-    wrln(output_file, f"            write!(output, \"{ob}{cb}\", c).unwrap();")
-    wrln(output_file, "        }")
+    wrln(output_file, f"        write!(output, \"{ob}{cb}\", c).unwrap();")
     wrln(output_file, "    }")
-    wrln(output_file, "    output")
     wrln(output_file, "}")
 
 
