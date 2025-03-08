@@ -1,52 +1,87 @@
 //! String preparation for comparison according to RFC4518.
 
 
+mod case_fold_map;
+mod case_sensitive_map;
+mod mapping;
+
+
 use std::borrow::Cow;
+use std::cmp::Ordering;
+
+use unicode_normalization::UnicodeNormalization;
+
+use crate::stringprep::mapping::{Mapping, MappingTarget};
 
 
 // we accept &str, which means the Transcode step is left to the application
 
 
 /// Performs the Map step of string preparation.
-fn map(s: &str) -> Cow<str> {
-    fn map_to_nothing(c: char) -> bool {
-        // first paragraph
-        c == '\u{AD}' || c == '\u{1806}' || c == '\u{34F}'
-        || (c >= '\u{180B}' && c <= '\u{180D}')
-        || (c >= '\u{FE00}' && c <= '\u{FE0F}')
-        || c == '\u{FFFC}'
-
-        // third paragraph
-        || (c >= '\u{0}' && c <= '\u{8}')
-        || (c >= '\u{E}' && c <= '\u{1F}')
-        || (c >= '\u{7F}' && c <= '\u{84}')
-        || (c >= '\u{86}' && c <= '\u{9F}')
-        || c == '\u{6DD}' || c == '\u{70F}' || c == '\u{180E}'
-        || (c >= '\u{200C}' && c <= '\u{200F}')
-        || (c >= '\u{202A}' && c <= '\u{202E}')
-        || (c >= '\u{2060}' && c <= '\u{2063}')
-        || (c >= '\u{206A}' && c <= '\u{206F}')
-        || c == '\u{FEFF}'
-        || (c >= '\u{FFF9}' && c <= '\u{FFFB}')
-        || (c >= '\u{1D173}' && c <= '\u{1D17A}')
-        || c == '\u{E0001}'
-        || (c >= '\u{E0020}' && c <= '\u{E007F}')
-
-        // fourth paragraph
-        || c == '\u{200B}'
+fn map(s: &str, fold_case: bool) -> Cow<str> {
+    fn get_target(sorted_mappings: &[Mapping], needle: char) -> Option<&MappingTarget> {
+        sorted_mappings.binary_search_by(|mapping| {
+            if mapping.first_char <= needle && needle <= mapping.last_char {
+                Ordering::Equal
+            } else if mapping.first_char > needle {
+                // range is greater than the needle
+                Ordering::Greater
+            } else {
+                assert!(mapping.last_char < needle);
+                // range is less than the needle
+                Ordering::Less
+            }
+        })
+            .ok()
+            .map(|i| &sorted_mappings[i].target)
     }
 
-    fn map_to_space(c: char) -> bool {
-        // second paragraph
-        c == '\u{9}' || c == '\u{A}' || c == '\u{B}' || c == '\u{C}'
-        || c == '\u{D}' || c == '\u{85}'
+    let want_mappings = if fold_case {
+        &crate::stringprep::case_fold_map::MAPPING[..]
+    } else {
+        &crate::stringprep::case_sensitive_map::MAPPING[..]
+    };
 
-        // fourth paragraph
-        || c == '\u{20}' || c == '\u{A0}' || c == '\u{1680}'
-        || (c >= '\u{2000}' && c <= '\u{200A}')
-        || c == '\u{2028}' || c == '\u{2029}' || c == '\u{202F}'
-        || c == '\u{205F}' || c == '\u{3000}'
+    // check if there is anything to map
+    let map_anything = s.chars()
+        .any(|c|
+            get_target(want_mappings, c)
+                .map(|mt| mt.will_change(c))
+                .unwrap_or(false)
+        );
+    if !map_anything {
+        return Cow::Borrowed(s)
     }
 
+    let mut output = String::with_capacity(s.len());
+    for c in s.chars() {
+        if let Some(target) = get_target(want_mappings, c) {
+            target.map_write(c, &mut output);
+        } else {
+            output.push(c);
+        }
+    }
+
+    Cow::Owned(output)
+}
+
+
+/// Performs the Normalize step of string preparation.
+fn normalize(s: &str) -> Cow<str> {
+    if s.chars().eq(s.nfkc()) {
+        // no normalization required
+        return Cow::Borrowed(s);
+    }
+
+    let mut ret = String::with_capacity(s.len());
+    for c in s.nfkc() {
+        ret.push(c);
+    }
+    Cow::Owned(ret)
+}
+
+
+/// Performs the Prohibit step of string preparation.
+fn is_prohibited(s: &str) -> bool {
     todo!();
 }
