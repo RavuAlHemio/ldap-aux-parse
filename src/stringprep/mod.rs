@@ -304,9 +304,41 @@ fn handle_insignificant_spaces_full(s: &str) -> Cow<str> {
 }
 
 
+/// The location where the given substring is being matched.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SubstringLocation {
+    /// The substring is matching at the beginning of the string, e.g. the `abc` in `abc*def*ghi`.
+    Initial,
+
+    /// The substring is matching somewhere within the string, e.g. the `def` in `abc*def*ghi` or `*def*`.
+    Any,
+
+    /// The substring is matching at the end of the string, e.g. the `ghi` in `abc*def*ghi`.
+    Final,
+}
+
+
 /// Performs the Insignificant Character Handling step for parts of a substring-match filter using
 /// case-ignore or exact-string matching.
-fn handle_insignificant_spaces_substring(s: &str) -> Cow<str> {
+fn handle_insignificant_spaces_substring(s: &str, location: SubstringLocation) -> Cow<str> {
+    let mut ret = s.to_owned();
+
+    if location == SubstringLocation::Initial {
+        let first_nonspace = ret
+            .char_indices()
+            .filter(|(_i, c)| *c != ' ')
+            .map(|(i, _c)| i)
+            .nth(0);
+        if let Some(fns) = first_nonspace {
+            if fns == 0 {
+                // insert a space at the beginning
+                ret.insert(0, ' ');
+            } else {
+                
+            }
+        }
+    }
+
     todo!();
 }
 
@@ -326,68 +358,114 @@ fn handle_telephone_number_insignificant_characters(s: &str) -> Cow<str> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::VecDeque;
+
+    use unicode_properties::GeneralCategoryGroup;
+
     use super::handle_insignificant_spaces_full;
+
+    fn naive_handle_insignificant_spaces(s: &str) -> String {
+        use unicode_properties::UnicodeGeneralCategory;
+
+        const ONE_SPACE: &str = " ";
+        const TWO_SPACES: &str = "  ";
+        const THREE_SPACES: &str = "   ";
+
+        // empty string => "  "
+        if s.len() == 0 {
+            return TWO_SPACES.to_owned();
+        }
+
+        // find all spaces followed by a combining mark and replace them with U+0000
+        // (a character that is stripped out from the input)
+        let mut string = s.to_owned();
+
+        loop {
+            let mut space_comb_index = None;
+            let mut prev_index_char = None;
+            for (i, c) in string.char_indices() {
+                if let Some((pi, pc)) = prev_index_char {
+                    if pc == ' ' && c.general_category_group() == GeneralCategoryGroup::Mark {
+                        // yup!
+                        space_comb_index = Some(pi);
+                    }
+                }
+                prev_index_char = Some((i, c));
+            }
+
+            if let Some(sci) = space_comb_index {
+                string.replace_range(sci..sci+1, "\u{0000}");
+            } else {
+                // all spaces followed by combining marks have been handled
+                break;
+            }
+        }
+
+        // double all remaining spaces
+        string = string.replace(ONE_SPACE, TWO_SPACES);
+
+        // iteratively reduce triplets of spaces into pairs
+        loop {
+            let shorter_string = string.replace(THREE_SPACES, TWO_SPACES);
+            if shorter_string.len() >= string.len() {
+                // nothing more to reduce
+                break;
+            }
+            string = shorter_string;
+        }
+
+        // reduce initial spaces to one
+        while string.starts_with(TWO_SPACES) {
+            string.replace_range(0..1, "");
+        }
+        if !string.starts_with(ONE_SPACE) {
+            string.insert(0, ' ');
+        }
+
+        // reduce final spaces to one
+        while string.ends_with(TWO_SPACES) {
+            string.pop();
+        }
+        if !string.ends_with(ONE_SPACE) {
+            string.push(' ');
+        }
+
+        // if we only have spaces, ensure we have two
+        if string == " " {
+            string.push(' ');
+        }
+
+        // transform U+0000s back into spaces
+        string = string.replace("\u{0000}", ONE_SPACE);
+
+        string
+    }
 
     #[test]
     fn test_handle_insignificant_spaces_full() {
-        macro_rules! input_string {
-            (@do_it, $accumulate:expr) => {
-                $accumulate
-            };
-            (@do_it, $accumulate:expr, C $(, $lettern:ident)*) => {
-                input_string!(@do_it, concat!($accumulate, '\u{301}') $(, $lettern)*)
-            };
-            (@do_it, $accumulate:expr, O $(, $lettern:ident)*) => {
-                input_string!(@do_it, concat!($accumulate, 'O') $(, $lettern)*)
-            };
-            (@do_it, $accumulate:expr, S $(, $lettern:ident)*) => {
-                input_string!(@do_it, concat!($accumulate, ' ') $(, $lettern)*)
-            };
-            ($letter1:ident $(, $lettern:ident)* $(,)?) => {
-                input_string!(@do_it, "", $letter1 $(, $lettern)*)
-            };
-        }
+        let mut queue = VecDeque::new();
+        // combining mark, "other character", space
+        const POOL: [char; 3] = ['\u{301}', 'O', ' '];
+        const TARGET_LENGTH: usize = 12;
+        queue.push_back(String::new());
 
-        assert_eq!(handle_insignificant_spaces_full(""), input_string!(S, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(C)), input_string!(S, C, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(S)), input_string!(S, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(O)), input_string!(S, O, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(C, C)), input_string!(S, C, C, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(C, S)), input_string!(S, C, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(C, O)), input_string!(S, C, O, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(S, C)), input_string!(S, S, C, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(S, S)), input_string!(S, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(S, O)), input_string!(S, O, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(O, C)), input_string!(S, O, C, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(O, S)), input_string!(S, O, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(O, O)), input_string!(S, O, O, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(C, C, C)), input_string!(S, C, C, C, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(C, C, S)), input_string!(S, C, C, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(C, C, O)), input_string!(S, C, C, O, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(C, S, C)), input_string!(S, C, S, C, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(C, S, S)), input_string!(S, C, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(C, S, O)), input_string!(S, C, S, S, O, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(C, O, C)), input_string!(S, C, O, C, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(C, O, S)), input_string!(S, C, O, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(C, O, O)), input_string!(S, C, O, O, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(S, C, C)), input_string!(S, S, C, C, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(S, C, S)), input_string!(S, S, C, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(S, C, O)), input_string!(S, S, C, O, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(S, S, C)), input_string!(S, S, C, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(S, S, S)), input_string!(S, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(S, S, O)), input_string!(S, O, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(S, O, C)), input_string!(S, O, C, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(S, O, S)), input_string!(S, O, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(S, O, O)), input_string!(S, O, O, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(O, C, C)), input_string!(S, O, C, C, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(O, C, S)), input_string!(S, O, C, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(O, C, O)), input_string!(S, O, C, O, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(O, S, C)), input_string!(S, O, S, C, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(O, S, S)), input_string!(S, O, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(O, S, O)), input_string!(S, O, S, S, O, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(O, O, C)), input_string!(S, O, O, C, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(O, O, S)), input_string!(S, O, O, S));
-        assert_eq!(handle_insignificant_spaces_full(input_string!(O, O, O)), input_string!(S, O, O, O, S));
-        todo!("continue up to length 6");
+        while let Some(item) = queue.pop_front() {
+            if item.len() < TARGET_LENGTH {
+                // create new entries by appending each of POOL in turn
+                for choice in POOL {
+                    let mut new_item = item.clone();
+                    new_item.push(choice);
+                    queue.push_back(new_item);
+                }
+            } else {
+                // try it out
+                assert_eq!(
+                    handle_insignificant_spaces_full(&item),
+                    naive_handle_insignificant_spaces(&item),
+                    "input is {:?}",
+                    item,
+                );
+            }
+        }
     }
 }
