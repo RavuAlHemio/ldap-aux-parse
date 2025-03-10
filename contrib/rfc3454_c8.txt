@@ -1,0 +1,15 @@
+   0340; ; changes display properties
+   0341; ; changes display properties
+   200E; ; changes display properties
+   200F; ; changes display properties
+   202A; ; changes display properties
+   202B; ; changes display properties
+   202C; ; changes display properties
+   202D; ; changes display properties
+   202E; ; changes display properties
+   206A; ; changes display properties
+   206B; ; changes display properties
+   206C; ; changes display properties
+   206D; ; changes display properties
+   206E; ; changes display properties
+   206F; ; changes display properties

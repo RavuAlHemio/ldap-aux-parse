@@ -11,7 +11,7 @@ keywords = ["ldap", "parser", "dn"]
 [features]
 default = []
 serde = ["dep:serde"]
-stringprep = ["dep:unicode-normalization"]
+stringprep = ["dep:unicode-normalization", "dep:unicode-properties"]
 tracing = ["dep:tracing"]
 
 [dependencies]
@@ -19,3 +19,4 @@ nom = { version = "8.0" }
 serde = { version = "1.0", features = ["derive"], optional = true }
 tracing = { version = "0.1", optional = true }
 unicode-normalization = { version = "0.1", optional = true }
+unicode-properties = { version = "0.1", optional = true }

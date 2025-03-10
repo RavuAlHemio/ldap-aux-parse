@@ -156,8 +156,11 @@ def collect_block_mappings(mappings: list[CharMapping], raw_mappings: dict[str, 
         return
     assert all(len(source) == 1 for (source, _target) in raw_mappings.items())
 
-    # only consider mappings to one character
+    # only look at entries that map to at least one character
+    # the first character is the most important to us
     sorted_raw_mappings = [(ord(k), ord(v[0]), [ord(vc) for vc in v[1:]]) for (k, v) in raw_mappings.items() if len(v) > 0]
+    if len(sorted_raw_mappings) < 2:
+        return
     sorted_raw_mappings.sort()
 
     prev_source, prev_target, prev_tail = sorted_raw_mappings[0]
@@ -204,6 +207,8 @@ def collect_pair_mappings(mappings: list[CharMapping], raw_mappings: dict[str, s
         if len(v) == 1
         and ord(k) + 1 == ord(v)
     ]
+    if len(sorted_raw_mappings) < 2:
+        return
     sorted_raw_mappings.sort()
 
     # this time, make steps by 2 and see if the difference is 1
