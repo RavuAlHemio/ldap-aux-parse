@@ -5,6 +5,7 @@ mod case_fold_map;
 mod case_sensitive_map;
 mod mapping;
 mod prohibit_map;
+mod spaces;
 
 
 use std::borrow::Cow;
