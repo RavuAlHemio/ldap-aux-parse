@@ -14,8 +14,11 @@ use unicode_properties::{GeneralCategoryGroup, UnicodeGeneralCategory};
 /// combining mark. The original string can be reconstructed by interspersing space (U+0020)
 /// characters between each slice.
 ///
-/// This iterator is useful for implementing RFC4518 § 2.6.1, which handles spaces followed by
-/// combining marks differently than spaces not followed by combining marks.
+/// This iterator is useful for implementing RFC4518 § 2.6.1. Since the Normalize step (§ 2.3)
+/// transforms the string into Unicode Normalization Form KC, any spacing modifier symbols, such as
+/// U+02D8 BREVE, have become sequences of U+0020 SPACE and the corresponding combining mark (U+0306
+/// COMBINING BREVE in this example) and thus must be treated differently from U+0020 SPACE in other
+/// contexts.
 pub(crate) struct SplitAtMarkedSpace<'a> {
     s: &'a str,
     pos: usize,
