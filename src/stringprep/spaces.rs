@@ -12,7 +12,7 @@ use unicode_properties::{GeneralCategoryGroup, UnicodeGeneralCategory};
 /// 
 /// Each slice returned by the iterator does not contain the space character but does contain the
 /// combining mark. The original string can be reconstructed by interspersing space (U+0020)
-/// characters between each slice.
+/// characters between each pair of slices.
 ///
 /// This iterator is useful for implementing RFC4518 § 2.6.1. Since the Normalize step (§ 2.3)
 /// transforms the string into Unicode Normalization Form KC, any spacing modifier symbols, such as
