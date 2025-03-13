@@ -180,29 +180,81 @@ pub enum SubstringLocation {
 /// Performs the Insignificant Character Handling step for parts of a substring-match filter using
 /// case-ignore or exact-string matching.
 fn handle_insignificant_spaces_substring(s: &str, location: SubstringLocation) -> Cow<str> {
-    let mut ret = s.to_owned();
+    // > If the string being prepared contains no non-space characters, then the output string is
+    // > exactly one SPACE.
+    if s.chars().all(|c| c == ' ') {
+        return Cow::Owned(" ".to_owned());
+    }
 
-    if location == SubstringLocation::Initial {
-        let first_nonspace = ret
-            .char_indices()
-            .filter(|(_i, c)| *c != ' ')
-            .map(|(i, _c)| i)
-            .nth(0);
-        if let Some(fns) = first_nonspace {
-            if fns == 0 {
-                // insert a space at the beginning
-                ret.insert(0, ' ');
-            } else {
-                
-            }
+    // split at marked spaces again
+    let mut pieces: Vec<String> = SplitAtMarkedSpace::new(&s)
+        .map(|piece| piece.to_owned())
+        .collect();
+    assert_ne!(pieces.len(), 0);
+
+    fn start_to_one_space(pieces: &mut Vec<String>) {
+        let first_nonspace_opt = pieces[0]
+            .find(|c| c != ' ');
+        match first_nonspace_opt {
+            Some(first_nonspace) => pieces[0].replace_range(..first_nonspace, " "),
+            None => pieces[0].replace_range(.., " "),
         }
     }
 
-    todo!();
+    fn end_to_one_space(pieces: &mut Vec<String>) {
+        let last_nonspace_opt = pieces.last().unwrap()
+            .rfind(|c| c != ' ');
+        match last_nonspace_opt {
+            Some(last_nonspace) => {
+                let last_nonspace_length = pieces
+                    .last().unwrap()
+                    [last_nonspace..]
+                    .chars()
+                    .nth(0).unwrap()
+                    .len_utf8();
+                let spaces_start = last_nonspace + last_nonspace_length;
+                pieces.last_mut().unwrap().replace_range(spaces_start.., " ");
+            },
+            None => {
+                // all are spaces
+                pieces.last_mut().unwrap().replace_range(.., " ");
+            },
+        }
+    }
+
+    if location == SubstringLocation::Initial {
+        // > If the input string is an initial substring, it is modified to start with exactly one
+        // > SPACE character
+        start_to_one_space(&mut pieces);
+    }
+
+    if location == SubstringLocation::Initial || location == SubstringLocation::Any {
+        // > If the input string is an initial or an any substring that ends in one or more space
+        // > characters, it is modified to end with exactly one SPACE character;
+        if pieces.last().unwrap().ends_with(' ') {
+            end_to_one_space(&mut pieces);
+        }
+    }
+
+    if location == SubstringLocation::Any || location == SubstringLocation::Final {
+        // > If the input string is an any or a final substring that starts in one or more space
+        // > characters, it is modified to start with exactly one SPACE character
+        if pieces.first().unwrap().ends_with(' ') {
+            start_to_one_space(&mut pieces);
+        }
+    }
+
+    if location == SubstringLocation::Final {
+        // > If the input string is a final substring, it is modified to end with exactly one SPACE
+        // > character.
+        end_to_one_space(&mut pieces);
+    }
+
+    Cow::Owned(pieces.join(" "))
 }
 
-/// Performs the Insignificant Character Handling step for strings matched using case-ignore and
-/// exact-string matching.
+/// Performs the Insignificant Character Handling step for strings matched using numeric string
+/// matching.
 fn handle_numeric_string_insignificant_characters(s: &str) -> Cow<str> {
     todo!();
 }
