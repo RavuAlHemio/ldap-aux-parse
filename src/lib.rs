@@ -4,7 +4,7 @@ mod common_parsing;
 pub mod dn;
 pub mod filter;
 #[cfg(feature = "serde")] mod ser_de;
-#[cfg(feature = "stringprep")] mod stringprep;
+#[cfg(feature = "stringprep")] pub mod stringprep;
 
 
 /// Tracing macro that does nothing when the `tracing` feature is disabled.

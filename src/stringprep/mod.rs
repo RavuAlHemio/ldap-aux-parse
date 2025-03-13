@@ -11,7 +11,7 @@ mod spaces;
 use std::borrow::Cow;
 use std::cmp::Ordering;
 
-use spaces::SplitAtMarkedSpace;
+use spaces::{find_next_unmarked_character, SplitAtMarkedSpace};
 use unicode_normalization::UnicodeNormalization;
 
 use crate::stringprep::mapping::{Mapping, MappingTarget};
@@ -40,7 +40,7 @@ fn map_get_target(sorted_mappings: &[Mapping], needle: char) -> Option<&MappingT
 
 
 /// Performs the Map step of string preparation.
-fn map(s: &str, fold_case: bool) -> Cow<str> {
+pub fn map(s: &str, fold_case: bool) -> Cow<str> {
     let want_mappings = if fold_case {
         &crate::stringprep::case_fold_map::MAPPING[..]
     } else {
@@ -72,7 +72,7 @@ fn map(s: &str, fold_case: bool) -> Cow<str> {
 
 
 /// Performs the Normalize step of string preparation.
-fn normalize(s: &str) -> Cow<str> {
+pub fn normalize(s: &str) -> Cow<str> {
     if s.chars().eq(s.nfkc()) {
         // no normalization required
         return Cow::Borrowed(s);
@@ -87,7 +87,7 @@ fn normalize(s: &str) -> Cow<str> {
 
 
 /// Performs the Prohibit step of string preparation.
-fn is_prohibited(s: &str) -> bool {
+pub fn is_prohibited(s: &str) -> bool {
     let prohibit_mapping = &crate::stringprep::prohibit_map::MAPPING;
     for c in s.chars() {
         if map_get_target(prohibit_mapping, c).is_some() {
@@ -104,7 +104,7 @@ fn is_prohibited(s: &str) -> bool {
 
 /// Performs the Insignificant Character Handling step for full strings matched using case-ignore
 /// or exact-string matching.
-fn handle_insignificant_spaces_full(s: &str) -> Cow<str> {
+pub fn handle_insignificant_spaces_full(s: &str) -> Cow<str> {
     // place spaces followed by combining marks beyond consideration
     let mut marked_space_pieces: Vec<String> = SplitAtMarkedSpace::new(s)
         .map(|s| s.to_owned())
@@ -179,7 +179,7 @@ pub enum SubstringLocation {
 
 /// Performs the Insignificant Character Handling step for parts of a substring-match filter using
 /// case-ignore or exact-string matching.
-fn handle_insignificant_spaces_substring(s: &str, location: SubstringLocation) -> Cow<str> {
+pub fn handle_insignificant_spaces_substring(s: &str, location: SubstringLocation) -> Cow<str> {
     // > If the string being prepared contains no non-space characters, then the output string is
     // > exactly one SPACE.
     if s.chars().all(|c| c == ' ') {
@@ -255,13 +255,34 @@ fn handle_insignificant_spaces_substring(s: &str, location: SubstringLocation) -
 
 /// Performs the Insignificant Character Handling step for strings matched using numeric string
 /// matching.
-fn handle_numeric_string_insignificant_characters(s: &str) -> Cow<str> {
-    todo!();
+pub fn handle_numeric_string_insignificant_characters(s: &str) -> Cow<str> {
+    let mut ret = s.to_owned();
+
+    // > All spaces [that are followed by no combining marks] are regarded as insignificant and are
+    // > to be removed.
+    while let Some(unmarked_space_index) = find_next_unmarked_character(&ret, |c| c == ' ') {
+        ret.remove(unmarked_space_index);
+    }
+
+    Cow::Owned(ret)
 }
 
 
 /// Performs the Insignificant Character Handling step for strings matched using telephoneNumber
 /// matching.
-fn handle_telephone_number_insignificant_characters(s: &str) -> Cow<str> {
-    todo!();
+pub fn handle_telephone_number_insignificant_characters(s: &str) -> Cow<str> {
+    let mut ret = s.to_owned();
+
+    // > [The listed] hyphens [followed by no combining marks] and spaces [followed by no combining
+    // > marks] are considered insignificant and are to be removed.
+
+    let is_space_or_hyphen = |c|
+        c == '-' || c == '\u{058A}' || c == '\u{2010}' || c == '\u{2011}' || c == '\u{2212}'
+        || c == '\u{FE63}' || c == '\u{FF0D}'
+    ;
+    while let Some(unmarked_space_or_hyphen_index) = find_next_unmarked_character(&ret, is_space_or_hyphen) {
+        ret.remove(unmarked_space_or_hyphen_index);
+    }
+
+    Cow::Owned(ret)
 }

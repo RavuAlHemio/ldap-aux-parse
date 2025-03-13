@@ -4,6 +4,47 @@
 use unicode_properties::{GeneralCategoryGroup, UnicodeGeneralCategory};
 
 
+/// Finds the first character in `s` that matches `predicate` and is not followed by a combining
+/// mark.
+///
+/// A combining mark is a Unicode character with General_Category `M`.
+///
+/// The function returns the byte index of the matched character, not of the mark following it.
+///
+/// The function panics if a predicate is passed that matches a combining mark.
+pub(crate) fn find_next_unmarked_character<F: FnMut(char) -> bool>(s: &str, mut predicate: F) -> Option<usize> {
+    let mut find_start_index = 0;
+    while let Some(relative_char_index) = s[find_start_index..].find(&mut predicate) {
+        let char_index = find_start_index + relative_char_index;
+        let mut char_iter = s[char_index..].char_indices();
+        let (_zero, matched_char) = char_iter.next().unwrap();
+        if matched_char.general_category_group() == GeneralCategoryGroup::Mark {
+            panic!("predicate matched combining mark");
+        }
+
+        match char_iter.next() {
+            Some((possible_mark_index, possible_mark_char)) => {
+                // is it a mark?
+                if possible_mark_char.general_category_group() == GeneralCategoryGroup::Mark {
+                    // alright, keep looking
+                    find_start_index = char_index + possible_mark_index;
+                    continue;
+                } else {
+                    // no -- we matched an unmarked character
+                    return Some(char_index);
+                }
+            },
+            None => {
+                // matched character at end of string => unmarked
+                return Some(char_index);
+            },
+        }
+    }
+
+    None
+}
+
+
 /// An iterator which splits a string slice into substrings delimited by spaces followed by
 /// combining marks.
 ///
@@ -95,7 +136,19 @@ impl<'a> Iterator for SplitAtMarkedSpace<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::SplitAtMarkedSpace;
+    use super::{find_next_unmarked_character, SplitAtMarkedSpace};
+
+    #[test]
+    fn test_find_next_unmarked_character() {
+        assert_eq!(find_next_unmarked_character("", |c| c == ' '), None);
+        assert_eq!(find_next_unmarked_character(" ", |c| c == ' '), Some(0));
+        assert_eq!(find_next_unmarked_character(" \u{301}", |c| c == ' '), None);
+        assert_eq!(find_next_unmarked_character(" \u{301} ", |c| c == ' '), Some(3));
+        assert_eq!(find_next_unmarked_character(" \u{301} \u{301}\u{301} ", |c| c == ' '), Some(8));
+        assert_eq!(find_next_unmarked_character(" \u{301} \u{301}\u{301} a", |c| c == ' '), Some(8));
+        assert_eq!(find_next_unmarked_character(" \u{301} \u{301}\u{301} a\u{301}", |c| c == ' '), Some(8));
+        assert_eq!(find_next_unmarked_character(" \u{301} \u{301}\u{301} \u{301}", |c| c == ' '), None);
+    }
 
     macro_rules! assert_keeps_returning_none {
         ($iterator:expr) => {
