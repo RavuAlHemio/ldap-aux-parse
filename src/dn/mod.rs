@@ -72,6 +72,19 @@ impl RelativeDistinguishedName {
         }
     }
 
+    /// Attempts to create a new RDN from a set of key-value pairs.
+    ///
+    /// Returns `None` if `key_value_pairs` is empty.
+    pub fn try_from_key_value_pairs(key_value_pairs: BTreeSet<(AttributeType, AttributeValue)>) -> Option<Self> {
+        if key_value_pairs.len() == 0 {
+            None
+        } else {
+            Some(Self {
+                key_value_pairs,
+            })
+        }
+    }
+
     /// Returns this RDN as a set of key-value pairs.
     pub fn as_set(&self) -> &BTreeSet<(AttributeType, AttributeValue)> {
         &self.key_value_pairs
