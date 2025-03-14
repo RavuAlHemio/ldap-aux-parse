@@ -28,6 +28,11 @@ impl DistinguishedName {
         self.0
     }
 
+    /// Creates a distinguished name from a vector of relative distinguished names.
+    pub fn from_relative_dns(relative_dns: Vec<RelativeDistinguishedName>) -> Self {
+        Self(relative_dns)
+    }
+
     /// Attempts to parse this distinguished name from a string.
     pub fn try_from_str(s: &str) -> Option<Self> {
         let (rest, dn) = crate::dn::parsing::parse_dn(s).ok()?;
