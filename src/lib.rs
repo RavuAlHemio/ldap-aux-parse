@@ -216,6 +216,11 @@ impl AttributeValue {
         &self.bytes
     }
 
+    /// Converts the given vector of bytes into an attribute value.
+    pub fn from_bytes(bytes: Vec<u8>) -> Self {
+        Self { bytes }
+    }
+
     /// Attempts to parse this attribute value from a string, applying DN escaping rules.
     ///
     /// This is the function to use if the attribute value is passed as part of a distinguished name
